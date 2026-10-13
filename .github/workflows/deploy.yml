@@ -1,0 +1,146 @@
+name: Deploy AllusionistWiki2 (Quartz) to GitHub Pages
+
+# アリュージョニスト Wiki 2 サイト
+#   サイト直下 = 表示（最新）層 = AllusionistLLMWiki2_Obsidian/wiki
+#   /l1/       = L1 下位層（同一構造・同一内容の L1 層スナップショット）
+on:
+  push:
+    branches: [main]
+  # L1 vault（AllusionistLLMWiki2_Obsidian）の push で即デプロイ
+  repository_dispatch:
+    types: [vault-updated]
+  workflow_dispatch:
+  schedule:
+    - cron: "0 * * * *"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      deploy: ${{ steps.flag.outputs.deploy }}
+      l1_sha: ${{ steps.l1.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get L1 vault HEAD SHA
+        id: l1
+        run: |
+          sha=$(git ls-remote https://github.com/allusionistwiki/AllusionistLLMWiki2_Obsidian.git refs/heads/main | cut -f1)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Check if this SHA was already deployed
+        id: cached
+        uses: actions/cache/restore@v4
+        with:
+          path: .deploy-marker
+          key: w2-deployed-${{ steps.l1.outputs.sha }}
+
+      - name: Set deploy flag
+        id: flag
+        run: |
+          if [ "${{ steps.cached.outputs.cache-hit }}" = "true" ]; then
+            echo "L1 vault unchanged (sha ${{ steps.l1.outputs.sha }}), skipping build"
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # 表示（最新）層: vault wiki/ をサイト直下へ
+      - name: Fetch display content (wiki/)
+        if: steps.flag.outputs.deploy == 'true'
+        run: |
+          git clone --depth 1 https://github.com/allusionistwiki/AllusionistLLMWiki2_Obsidian.git /tmp/vault
+          mkdir -p content
+          cp -r /tmp/vault/wiki/. content/
+
+      # L1 下位層: 同一構造のまま /l1/ へ（下位層スナップショット）
+      - name: Fetch L1 sublayer content (same wiki/ -> /l1/)
+        if: steps.flag.outputs.deploy == 'true'
+        run: |
+          mkdir -p content/l1
+          cp -r /tmp/vault/wiki/. content/l1/
+          printf -- '---\ntitle: L1 層（下位層索引）\ndescription: 表示（最新）層と同じ構造の L1 層。来歴・審査データへの参照はここから\ndate: 2026-10-13\n---\n\n# L1 層（下位層）\n\nこの層は Wiki2 の **L1 下位層** です。表示（最新）層と同じ構造（nav / claims / mysteries / references / deferrals / appearances / characters / relationships / entities / arcs / episodes）で、L1 層の来歴（run ID・facts・審査根拠）を辿る起点になります。\n\n- 表示（最新）層: [サイトトップへ](../index.md)\n- 作業データ（facts/candidates 等の生データ）: [AllusionistWiki_work](https://github.com/allusionistwiki/AllusionistWiki_work)\n- 階層モデル（L0〜L7）: [DESIGN_NOTES](https://github.com/allusionistwiki/AllusionistWiki_obsidian/blob/main/DESIGN_NOTES.md)\n' > content/l1/_layer.md
+
+      - name: Restore Quartz build cache
+        if: steps.flag.outputs.deploy == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: .quartz-cache
+          key: w2-quartz-cache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            w2-quartz-cache-${{ runner.os }}-
+
+      - name: Generate recent-commits page (GitHub API)
+        if: steps.flag.outputs.deploy == 'true'
+        run: |
+          python3 scripts/fetch_recent_commits.py 100
+
+      - uses: actions/setup-node@v4
+        if: steps.flag.outputs.deploy == 'true'
+        with:
+          node-version: 22
+
+      - name: Restore node_modules cache
+        if: steps.flag.outputs.deploy == 'true'
+        id: npmcache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: w2-npm-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Dependencies
+        if: steps.flag.outputs.deploy == 'true' && steps.npmcache.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Build Quartz
+        if: steps.flag.outputs.deploy == 'true'
+        run: npx quartz build
+
+      - name: Save Quartz build cache
+        if: steps.flag.outputs.deploy == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .quartz-cache
+          key: w2-quartz-cache-save-${{ runner.os }}-${{ github.sha }}
+
+      - name: Upload artifact
+        if: steps.flag.outputs.deploy == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+  deploy:
+    needs: build
+    if: needs.build.outputs.deploy == 'true'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      # ★build が実際に取得・ビルドした SHA をそのまま使うこと。
+      #   ここで ls-remote を再実行すると、ビルド後に vault へ入った新規コミットの
+      #   SHA を「デプロイ済み」と誤記録し、以後の定期実行が全部スキップされて
+      #   サイトが古いまま固着する（2026-10-03 の事故の再発防止）。
+      - name: Mark SHA as deployed
+        run: |
+          mkdir -p .deploy-marker
+          echo "deployed" > .deploy-marker/deployed.txt
+
+      - name: Save deploy marker
+        uses: actions/cache/save@v4
+        with:
+          path: .deploy-marker
+          key: w2-deployed-${{ needs.build.outputs.l1_sha }}
