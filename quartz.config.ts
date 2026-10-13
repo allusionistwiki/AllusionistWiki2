@@ -83,6 +83,10 @@ const config: QuartzConfig = {
       Plugin.ContentIndex({
         enableSiteMap: true,
         enableRSS: true,
+        // /l1/ 二重配置を contentIndex・sitemap・RSS から除外:
+        // 全ページロード時に fetch される contentIndex.json が 39MB 化しフリーズした
+        excludePrefixes: ["l1/"],
+        excerptChars: 200,
       }),
       Plugin.RecentUpdatesPage({ limit: 1000 }),
       Plugin.Assets(),

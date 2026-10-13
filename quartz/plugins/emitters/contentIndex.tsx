@@ -28,6 +28,12 @@ interface Options {
   rssFullHtml: boolean
   rssSlug: string
   includeEmptyFiles: boolean
+  /** contentIndex.json / sitemap / RSS から除外するスラッグ接頭辞（例 ["l1/"]）。
+   *  /l1/ 二重配置だと全ページロード時の contentIndex.json fetch が倍化しフリーズする */
+  excludePrefixes?: string[]
+  /** contentIndex.json 内の本文をこの文字数に切り出す（popover プレビュー用。
+   *  全文格納は JSON を数十 MB に膨張させる） */
+  excerptChars?: number
 }
 
 const defaultOptions: Options = {
@@ -37,6 +43,8 @@ const defaultOptions: Options = {
   rssFullHtml: false,
   rssSlug: "index",
   includeEmptyFiles: true,
+  excludePrefixes: [],
+  excerptChars: 200,
 }
 
 function generateSiteMap(cfg: GlobalConfiguration, idx: ContentIndexMap): string {
@@ -101,6 +109,9 @@ export const ContentIndex: QuartzEmitterPlugin<Partial<Options>> = (opts) => {
       const linkIndex: ContentIndexMap = new Map()
       for (const [tree, file] of content) {
         const slug = file.data.slug!
+        if ((opts?.excludePrefixes ?? []).some((p) => slug.startsWith(p))) {
+          continue
+        }
         const date = getDate(ctx.cfg.configuration, file.data) ?? new Date()
         if (opts?.includeEmptyFiles || (file.data.text && file.data.text !== "")) {
           linkIndex.set(slug, {
@@ -145,6 +156,14 @@ export const ContentIndex: QuartzEmitterPlugin<Partial<Options>> = (opts) => {
           // for the RSS feed
           delete content.description
           delete content.date
+          // 本文は popover プレビュー用の抜粋のみ保持（全文保持は JSON を膨張させる）
+          if (
+            opts?.excerptChars != null &&
+            typeof content.content === "string" &&
+            content.content.length > opts.excerptChars
+          ) {
+            content.content = content.content.slice(0, opts.excerptChars)
+          }
           return [slug, content]
         }),
       )
