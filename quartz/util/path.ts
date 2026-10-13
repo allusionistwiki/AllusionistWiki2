@@ -233,8 +233,12 @@ export function transformLink(src: FullSlug, target: string, opts: TransformOpti
     return targetSlug as RelativeURL
   } else {
     const folderTail = isFolderPath(targetSlug) ? "/" : ""
-    const canonicalSlug = stripSlashes(targetSlug.slice(".".length))
-    let [targetCanonical, targetAnchor] = splitAnchor(canonicalSlug)
+    const canonicalSlugRaw = stripSlashes(targetSlug.slice(".".length))
+    let [targetCanonical, targetAnchor] = splitAnchor(canonicalSlugRaw)
+    // 相対リンクの "../"・"./" プレフィックスを除去し vault ルート基準に正規化
+    // （生成器は各ページの深さから ../../nav/x のようにルート相対で書く規約）
+    const canonicalSlug = targetCanonical.replace(/^(\.\.?\/)+/, "")
+    targetCanonical = canonicalSlug
 
     if (opts.strategy === "shortest") {
       // if the file name is unique, then it's just the filename
@@ -244,10 +248,29 @@ export function transformLink(src: FullSlug, target: string, opts: TransformOpti
         return targetCanonical === fileName
       })
 
+      // L1 二重配置対応: /l1/ 下に同一構造を複製しているため basename は常に
+      // 2 系統（直下 + l1/）で曖昧になる。層内優先で解決する:
+      //   - 直下（表示層）のページ → 直下のスラッグを優先
+      //   - l1/ 下のページ → l1/ 下のスラッグを優先（層内自己完結）
+      let candidates = matchingFileNames
+      if (candidates.length > 1) {
+        const inL1 = src.startsWith("l1/")
+        const preferred = candidates.filter((slug) => (inL1 ? slug.startsWith("l1/") : !slug.startsWith("l1/")))
+        if (preferred.length >= 1) candidates = preferred
+      }
+
       // only match, just use it
-      if (matchingFileNames.length === 1) {
-        const targetSlug = matchingFileNames[0]
+      if (candidates.length === 1) {
+        const targetSlug = candidates[0]
         return (resolveRelative(src, targetSlug) + targetAnchor) as RelativeURL
+      }
+    }
+
+    // l1/ 下のページからの完全パス指定リンクは l1 層内を指す（層内自己完結）
+    if (src.startsWith("l1/") && !canonicalSlug.startsWith("l1/")) {
+      const l1Slug = "l1/" + canonicalSlug
+      if (opts.allSlugs.includes(l1Slug as FullSlug)) {
+        return (resolveRelative(src, l1Slug as FullSlug) + targetAnchor) as RelativeURL
       }
     }
 

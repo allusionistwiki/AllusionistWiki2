@@ -68,7 +68,7 @@ jobs:
         run: |
           mkdir -p content/l1
           cp -r /tmp/vault/wiki/. content/l1/
-          printf -- '---\ntitle: L1 層（下位層索引）\ndescription: 表示（最新）層と同じ構造の L1 層。来歴・審査データへの参照はここから\ndate: 2026-10-13\n---\n\n# L1 層（下位層）\n\nこの層は Wiki2 の **L1 下位層** です。表示（最新）層と同じ構造（nav / claims / mysteries / references / deferrals / appearances / characters / relationships / entities / arcs / episodes）で、L1 層の来歴（run ID・facts・審査根拠）を辿る起点になります。\n\n- 表示（最新）層: [サイトトップへ](../index.md)\n- 作業データ（facts/candidates 等の生データ）: [AllusionistWiki_work](https://github.com/allusionistwiki/AllusionistWiki_work)\n- 階層モデル（L0〜L7）: [DESIGN_NOTES](https://github.com/allusionistwiki/AllusionistWiki_obsidian/blob/main/DESIGN_NOTES.md)\n' > content/l1/_layer.md
+          printf -- '---\ntitle: L1 層（下位層索引）\ndescription: 表示（最新）層と同じ構造の L1 層。来歴・審査データへの参照はここから\ndate: 2026-10-13\n---\n\n# L1 層（下位層）\n\nこの層は Wiki2 の **L1 下位層** です。表示（最新）層と同じ構造（nav / claims / mysteries / references / deferrals / appearances / characters / relationships / entities / arcs / episodes）で、L1 層の来歴（run ID・facts・審査根拠）を辿る起点になります。\n\n- 表示（最新）層: [サイトトップへ](https://allusionistwiki.github.io/AllusionistWiki2/)\n- 作業データ（facts/candidates 等の生データ）: [AllusionistWiki_work](https://github.com/allusionistwiki/AllusionistWiki_work)\n- 階層モデル（L0〜L7）: [DESIGN_NOTES](https://github.com/allusionistwiki/AllusionistWiki_obsidian/blob/main/DESIGN_NOTES.md)\n' > content/l1/_layer.md
 
       - name: Restore Quartz build cache
         if: steps.flag.outputs.deploy == 'true'

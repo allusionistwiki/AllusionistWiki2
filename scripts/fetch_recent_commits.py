@@ -17,7 +17,11 @@ OUT = "content/recent-commits.md"
 LIMIT = int(sys.argv[1]) if len(sys.argv) > 1 else 100
 
 def esc(s: str) -> str:
-    return s.replace("|", "\\|").replace("\n", " ")
+    # 角括弧を全角化: コミットメッセージ内の [[...]] が wikilink 化して
+    # 存在しないスラッグへのリンク（broken）になるのを防ぐ。
+    # \[ \] エスケープは micromark が先に解決してテキストノードで
+    # [[...]] に復元されるため wikilink 正規表現を止められない（全角が確実）
+    return s.replace("|", "\\|").replace("\n", " ").replace("[", "［").replace("]", "］")
 
 def main():
     url = f"https://api.github.com/repos/{REPO}/commits?per_page={LIMIT}"
