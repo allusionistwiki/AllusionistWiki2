@@ -29,7 +29,8 @@
 .explorer {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  /* clip: スクロールコンテナ化しない（スクロールは .explorer-content のみ） */
+  overflow: clip;
 
   min-height: 1.2rem;
   flex: 1 1 0;
@@ -112,6 +113,7 @@ button.desktop-explorer {
   list-style: none;
   overflow: hidden;
   overflow-y: auto;
+  overscroll-behavior: contain;
   flex: 1 1 0;
   margin-top: 0.5rem;
 
@@ -119,7 +121,6 @@ button.desktop-explorer {
     list-style: none;
     margin: 0;
     padding: 0;
-    overscroll-behavior: contain;
 
     & li > a {
       color: var(--dark);
@@ -144,7 +145,10 @@ button.desktop-explorer {
   }
 
   .folder-outer > ul {
-    overflow: hidden;
+    /* clip（hidden ではなく）でスクロールコンテナ化を防ぐ:
+       開いたフォルダの中身にカーソルが乗ると内側 ul がホイールを奪って
+       親の .explorer-content がスクロールできなくなるための対策 */
+    overflow: clip;
     margin-left: 6px;
     padding-left: 0.8rem;
     border-left: 1px solid var(--lightgray);

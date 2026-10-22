@@ -3,7 +3,9 @@
 .toc {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  /* clip: hidden だと右サイドバー自体がスクロールコンテナ化して
+     中身にカーソルが乗ったときのホイールを奪うため */
+  overflow: clip;
   min-height: 1.4rem;
   flex: 1 1 0;
   &:has(button.toc-header.collapsed) {
