@@ -42,17 +42,14 @@ function toggleFolder(evt: MouseEvent) {
   const target = evt.target as MaybeHTMLElement
   if (!target) return
 
-  // Check if target was svg icon or button
-  const isSvg = target.nodeName === "svg"
-
-  // corresponding <ul> element relative to clicked button/folder
-  const folderContainer = (
-    isSvg
-      ? // svg -> div.folder-container
-        target.parentElement
-      : // button.folder-button -> div -> div.folder-container
-        target.parentElement?.parentElement
-  ) as MaybeHTMLElement
+  // Resolve the enclosing folder container robustly: clicks land on inner SVG
+  // shapes (polyline/path) or text spans, not on the svg/button element itself,
+  // so positional assumptions (parentElement chains) break and the folder
+  // cannot be collapsed (the "folder won't close / stays open" symptom).
+  const folderContainer =
+    target instanceof Element
+      ? (target.closest(".folder-container") as MaybeHTMLElement)
+      : undefined
   if (!folderContainer) return
   const childFolderContainer = folderContainer.nextElementSibling as MaybeHTMLElement
   if (!childFolderContainer) return

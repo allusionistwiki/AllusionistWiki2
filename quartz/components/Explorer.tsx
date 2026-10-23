@@ -25,7 +25,10 @@ export interface Options {
 const defaultOptions: Options = {
   folderDefaultState: "collapsed",
   folderClickBehavior: "link",
-  useSavedState: true,
+  // Opened-folder state persistence kept users' sidebars permanently expanded
+  // ("folder won't close, stays open"). Every page load now starts from
+  // folderDefaultState ("collapsed").
+  useSavedState: false,
   mapFn: (node) => {
     return node
   },
