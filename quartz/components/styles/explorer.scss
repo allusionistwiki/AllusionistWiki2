@@ -138,6 +138,9 @@ button.desktop-explorer {
     display: grid;
     grid-template-rows: 0fr;
     transition: grid-template-rows 0.3s ease-in-out;
+    /* 畳み込みのクリップは grid 容器側で持つ（0fr の 0 高さをここで切る）。
+       1fr（展開）時は内容が溢れないのでこの hidden はホイールを奪わない。 */
+    overflow: hidden;
   }
 
   .folder-outer.open {
@@ -145,15 +148,12 @@ button.desktop-explorer {
   }
 
   .folder-outer > ul {
-    /* clip（hidden ではなく）でスクロールコンテナ化を防ぐ:
-       開いたフォルダの中身にカーソルが乗ると内側 ul がホイールを奪って
-       親の .explorer-content がスクロールできなくなるための対策 */
-    overflow: clip;
-    /* grid 0fr 畳み込みは項目の min-content が 0 のときのみ効く。
-       overflow:clip はスクロールコンテナではないので min-content が本文高さに
-       なり、閉じても表示が残った（=「フォルダが閉じられない」症状）。
-       min-height:0 で明示的に 0 に固定し、ホイール対策と畳み込みを両立させる。 */
-    min-height: 0;
+    /* 畳み込み（grid 0fr）は項目の min-content が 0 のときのみ効く:
+       内側 ul は overflow:hidden（スクロールコンテナ）が必須で、clip だと
+       min-content が本文高さになり「閉じても表示が残る」。ホイール保護は
+       overscroll-behavior をこの ul に付けないことで成立する
+       （実際のスクロール器 .explorer-content 以外に contain を付けない）。 */
+    overflow: hidden;
     margin-left: 6px;
     padding-left: 0.8rem;
     border-left: 1px solid var(--lightgray);
