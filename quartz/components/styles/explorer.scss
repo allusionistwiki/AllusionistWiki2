@@ -149,6 +149,11 @@ button.desktop-explorer {
        開いたフォルダの中身にカーソルが乗ると内側 ul がホイールを奪って
        親の .explorer-content がスクロールできなくなるための対策 */
     overflow: clip;
+    /* grid 0fr 畳み込みは項目の min-content が 0 のときのみ効く。
+       overflow:clip はスクロールコンテナではないので min-content が本文高さに
+       なり、閉じても表示が残った（=「フォルダが閉じられない」症状）。
+       min-height:0 で明示的に 0 に固定し、ホイール対策と畳み込みを両立させる。 */
+    min-height: 0;
     margin-left: 6px;
     padding-left: 0.8rem;
     border-left: 1px solid var(--lightgray);
