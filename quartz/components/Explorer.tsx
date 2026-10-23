@@ -24,9 +24,7 @@ export interface Options {
 
 const defaultOptions: Options = {
   folderDefaultState: "collapsed",
-  // "link" made folder-title clicks navigate to the folder index page,
-  // so clicking a folder never closed it. "collapse" = click toggles open/closed.
-  folderClickBehavior: "collapse",
+  folderClickBehavior: "link",
   // Opened-folder state persistence kept users' sidebars permanently expanded
   // ("folder won't close, stays open"). Every page load now starts from
   // folderDefaultState ("collapsed").

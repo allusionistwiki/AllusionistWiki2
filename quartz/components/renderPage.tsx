@@ -26,19 +26,22 @@ export function pageResources(
   baseDir: FullSlug | RelativeURL,
   staticResources: StaticResources,
 ): StaticResources {
+  // Cache-busting stamp for the bundle assets (index.css/prescript/postscript have
+  // fixed URLs — GitHub Pages + browsers keep serving stale JS after deploys).
+  const ASSET_TAG = (process.env.GITHUB_SHA ?? "dev").slice(0, 8)
   const contentIndexPath = joinSegments(baseDir, "static/contentIndex.json")
   const contentIndexScript = `const fetchData = fetch("${contentIndexPath}").then(data => data.json())`
 
   const resources: StaticResources = {
     css: [
       {
-        content: joinSegments(baseDir, "index.css"),
+        content: `${joinSegments(baseDir, "index.css")}?v=${ASSET_TAG}`,
       },
       ...staticResources.css,
     ],
     js: [
       {
-        src: joinSegments(baseDir, "prescript.js"),
+        src: `${joinSegments(baseDir, "prescript.js")}?v=${ASSET_TAG}`,
         loadTime: "beforeDOMReady",
         contentType: "external",
       },
@@ -54,7 +57,7 @@ export function pageResources(
   }
 
   resources.js.push({
-    src: joinSegments(baseDir, "postscript.js"),
+    src: `${joinSegments(baseDir, "postscript.js")}?v=${ASSET_TAG}`,
     loadTime: "afterDOMReady",
     moduleType: "module",
     contentType: "external",
