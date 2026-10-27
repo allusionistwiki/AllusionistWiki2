@@ -1,6 +1,13 @@
 import { PageLayout, SharedLayout } from "./quartz/cfg"
 import * as Component from "./quartz/components"
 import CreatedModifiedMeta from "./quartz/components/CreatedModifiedMeta"
+import { FileTrieNode } from "./quartz/util/fileTrie"
+
+// 下位Wiki索引の除外: /l1/ はトップ（表示層）と同内容の複製サブツリーのため
+// サイドバー Explorer には出さず、索引は入口ページ下部の節が担う。
+const explorerOptions = {
+  filterFn: (node: FileTrieNode) => node.slugSegment !== "tags" && node.slugSegment !== "l1",
+}
 
 // components shared across all pages
 export const sharedPageComponents: SharedLayout = {
@@ -9,8 +16,8 @@ export const sharedPageComponents: SharedLayout = {
   afterBody: [],
   footer: Component.Footer({
     links: {
-      "Obsidian vault（ソース）": "https://github.com/allusionistwiki/AllusionistWiki_obsidian",
-      "Quartz プロジェクト": "https://github.com/allusionistwiki/AllusionistWiki",
+      "Obsidian vault（ソース）": "https://github.com/allusionistwiki/AllusionistLLMWiki2_Obsidian",
+      "Quartz プロジェクト": "https://github.com/allusionistwiki/AllusionistWiki2",
     },
   }),
 }
@@ -39,6 +46,7 @@ export const defaultContentPageLayout: PageLayout = {
         { Component: Component.ReaderMode() },
       ],
     }),
+    Component.Explorer(explorerOptions),
   ],
   right: [
     Component.Graph(),
@@ -62,6 +70,7 @@ export const defaultListPageLayout: PageLayout = {
         { Component: Component.Darkmode() },
       ],
     }),
+    Component.Explorer(explorerOptions),
   ],
   right: [],
 }
