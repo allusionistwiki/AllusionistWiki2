@@ -9,7 +9,10 @@ import { parseMarkdown } from "./processors/parse"
 import { filterContent } from "./processors/filter"
 import { emitContent } from "./processors/emit"
 import cfg from "../quartz.config"
-import { FilePath, joinSegments, slugifyFilePath } from "./util/path"
+import { FilePath, FullSlug, joinSegments, slugifyFilePath } from "./util/path"
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { createHash } from "crypto"
+import { gunzipSync, gzipSync } from "node:zlib"
 import chokidar from "chokidar"
 import { ProcessedContent } from "./plugins/vfile"
 import { Argv, BuildCtx } from "./util/ctx"
@@ -67,8 +70,12 @@ async function buildQuartz(argv: Argv, mut: Mutex, clientRefresh: () => void) {
 
   const release = await mut.acquire()
   perf.addEvent("clean")
-  await rm(output, { recursive: true, force: true })
-  console.log(`Cleaned output directory \`${output}\` in ${perf.timeSince("clean")}`)
+  if (process.env.QUARTZ_SKIP_CLEAN === "1") {
+    console.log(`Skipped cleaning output directory \`${output}\` (diff build)`)
+  } else {
+    await rm(output, { recursive: true, force: true })
+    console.log(`Cleaned output directory \`${output}\` in ${perf.timeSince("clean")}`)
+  }
 
   perf.addEvent("glob")
   const allFiles = await glob("**/*.*", argv.directory, cfg.configuration.ignorePatterns)
@@ -81,10 +88,15 @@ async function buildQuartz(argv: Argv, mut: Mutex, clientRefresh: () => void) {
   ctx.allFiles = allFiles
   ctx.allSlugs = allFiles.map((fp) => slugifyFilePath(fp as FilePath))
 
-  const parsedFiles = await parseMarkdown(ctx, filePaths)
+  const prevManifest = process.env.QUARTZ_PREV_MANIFEST
+  const diffMode = process.env.QUARTZ_DIFF === "1" && !!prevManifest && existsSync(prevManifest)
+  const parsedFiles = diffMode
+    ? await parseIncremental(ctx, filePaths)
+    : await parseMarkdown(ctx, filePaths)
   const filteredContent = filterContent(ctx, parsedFiles)
 
   await emitContent(ctx, filteredContent)
+  writeDiffState(ctx, filteredContent)
   console.log(
     styleText("green", `Done processing ${markdownPaths.length} files in ${perf.timeSince()}`),
   )
@@ -94,6 +106,86 @@ async function buildQuartz(argv: Argv, mut: Mutex, clientRefresh: () => void) {
     ctx.incremental = true
     return startWatching(ctx, mut, parsedFiles, clientRefresh)
   }
+}
+
+// CI 差分ビルド（QUARTZ_DIFF=1 のときだけ）: manifest の sha256 と比べ、
+// 変更された .md だけ parse（LLM）し、未変更ページは processed キャッシュから
+// 復元して合流する。emit は全数（出力は完全一致・graph/search も毎回最新）。
+const DIFF_PAGES: Record<string, string> = {}
+
+function relOf(ctx: BuildCtx, fp: FilePath): string {
+  return path.relative(ctx.argv.directory, fp).split(path.sep).join("/")
+}
+
+async function parseIncremental(ctx: BuildCtx, filePaths: FilePath[]) {
+  const { argv } = ctx
+  const prevRaw = JSON.parse(readFileSync(process.env.QUARTZ_PREV_MANIFEST!, "utf8"))
+  const prevPages: Record<string, string> = prevRaw?.pages ?? {}
+  if (prevRaw?.manifestVersion !== 2) {
+    throw new Error("diff build: prev manifest is not manifestVersion 2 — full build required")
+  }
+
+  const changedPaths: FilePath[] = []
+  const changedRels = new Set<string>()
+  for (const fp of filePaths) {
+    const rel = relOf(ctx, fp)
+    const hash = createHash("sha256").update(readFileSync(fp)).digest("hex")
+    DIFF_PAGES[rel] = hash
+    if (prevPages[rel] !== hash) {
+      changedPaths.push(fp)
+      changedRels.add(rel)
+    }
+  }
+  console.log(`diff: pages=${filePaths.length} llm-parse=${changedPaths.length}`)
+
+  const parsedNew = await parseMarkdown(ctx, changedPaths)
+
+  const cachePath = process.env.QUARTZ_PROCESSED_CACHE ?? ".quartz-cache/processed.json.gz"
+  if (!existsSync(cachePath)) {
+    throw new Error(`diff build: processed cache missing at ${cachePath} — full build required`)
+  }
+  const cached = JSON.parse(gunzipSync(readFileSync(cachePath)).toString("utf8"))
+  const merged: ProcessedContent[] = [...parsedNew]
+  for (const e of cached.pages ?? []) {
+    if (changedRels.has(e.rel)) continue
+    // 未変更ページは前回の processed（frontmatter・HTML・tree 込みの data）を
+    // そのまま使う — parse は二度と同じ結果になるため LLM を走らせない。
+    const vfile: any = {
+      value: e.value,
+      data: e.data,
+      messages: [],
+    }
+    merged.push([e.data.tree ?? null, vfile] as unknown as ProcessedContent)
+  }
+  console.log(`diff: restored=${merged.length - parsedNew.length} parsed=${parsedNew.length}`)
+  return merged
+}
+
+// 差分状態（manifest v2 + processed キャッシュ）を emit 後に更新する。
+// 通常（フル）ビルドでも呼ばれる — 次回の差分ビルドの基準（キャッシュ）を
+// 暖める。差分モードでは parseIncremental が計算した sha マップをそのまま使う。
+// 途中失敗で書かれなくても次回の差分計算は安全（変更は再検出される）。
+function writeDiffState(ctx: BuildCtx, filteredContent: ProcessedContent[]) {
+  const { argv } = ctx
+  if (Object.keys(DIFF_PAGES).length === 0) {
+    for (const rel0 of ctx.allFiles) {
+      if (!rel0.endsWith(".md")) continue
+      const rel = rel0.split("\\").join("/")
+      DIFF_PAGES[rel] = createHash("sha256").update(readFileSync(joinSegments(argv.directory, rel0))).digest("hex")
+    }
+  }
+  const manifestPath = joinSegments(argv.output, "index.json") as FilePath
+  writeFileSync(manifestPath, JSON.stringify({ manifestVersion: 2, pages: DIFF_PAGES }))
+
+  const cachePath = process.env.QUARTZ_PROCESSED_CACHE ?? ".quartz-cache/processed.json.gz"
+  const pages = []
+  for (const content of filteredContent) {
+    const vf = content[1]
+    pages.push({ rel: vf.data.relativePath, value: String(vf.value), data: vf.data })
+  }
+  mkdirSync(path.dirname(cachePath), { recursive: true })
+  writeFileSync(cachePath, gzipSync(Buffer.from(JSON.stringify({ pages: pages }))))
+  console.log(`diff: state written pages=${pages.length}`)
 }
 
 // setup watcher for rebuilds

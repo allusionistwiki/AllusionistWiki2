@@ -2,7 +2,19 @@ name: Deploy AllusionistWiki2 (Quartz) to GitHub Pages
 
 # アリュージョニスト Wiki 2 サイト
 #   サイト直下 = 表示（最新）層 = AllusionistLLMWiki2_Obsidian/wiki
-#   /l1/       = L1 下位層（同一構造・同一内容の L1 層スナップショット）
+#   /l1/       = L1 層スナップショット（/l1/ 下位層として二重配置）
+#
+# デプロイ戦略（3 段・2026-10-28 導入）:
+#   1. 変化なし → 即スキップ（deploy-marker: L1 SHA + サイト SHA のキー連合）。
+#   2. 内容のみの変化（削除・移動なし、エンジン無変更）→ 差分ビルド:
+#      前回落とした public/ ツリーと manifest を復元し、QUARTZ_DIFF=1 で
+#      changed ページだけ partialEmit（quartz/build.ts の CI 差分パッチ）。
+#      発火条件: QUARTZ_DIFF=1 + QUARTZ_PREV_MANIFEST 存在。通常ビルド/dev は無影響。
+#      計算（parse）は全数そのまま（frontmatter/graph 解決に全数が必要）なので、
+#      速くなるのは公開面（changed 分だけ再生成・差分の小さい publish）側。
+#   3. ページ削除・移動、エンジン/ワークフロー/生成スクリプト変更を含む変化、
+#      差分基盤（前回落とし込み）が無い場合 → フルビルド（従来動作）。
+#      差分ビルドが失敗した場合も同じステップにフォールバックする。
 on:
   push:
     branches: [main]
@@ -56,21 +68,29 @@ jobs:
             echo "deploy=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # 表示（最新）層: vault wiki/ をサイト直下へ
-      - name: Fetch display content (wiki/l1 + l2 + layers)
+      # 前回の manifest（public/index.json = manifest v2）と基準 SHA 群。
+      # 差分ビルドの基底（processed キャッシュ）は .quartz-cache に同梱
+      # （processed.json.gz・下の Restore Quartz build cache で復元）。
+      - name: Restore last manifest (diff base)
+        id: mancache
+        if: steps.flag.outputs.deploy == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: .last-manifest
+          key: w2-last-manifest-${{ runner.os }}
+          restore-keys: |
+            w2-last-manifest-${{ runner.os }}-
+
+      # 表示（最新）層 + L1 下位層 + 層索引の content を生成する（両モード共通）。
+      - name: Fetch content (display + l2 + layers + l1 sublayer)
         if: steps.flag.outputs.deploy == 'true'
         run: |
           git clone --depth 1 https://github.com/allusionistwiki/AllusionistLLMWiki2_Obsidian.git /tmp/vault
-          mkdir -p content content/l2 content/layers
+          rm -rf content
+          mkdir -p content content/l2 content/layers content/l1
           cp -r /tmp/vault/wiki/l1/. content/
           cp -r /tmp/vault/wiki/l2/. content/l2/
           cp -r /tmp/vault/wiki/layers/. content/layers/
-
-      # L1 下位層: wiki/l1 を /l1/ へ（下位層スナップショット）
-      - name: Fetch L1 sublayer content (wiki/l1 -> /l1/)
-        if: steps.flag.outputs.deploy == 'true'
-        run: |
-          mkdir -p content/l1
           cp -r /tmp/vault/wiki/l1/. content/l1/
           printf -- '---\ntitle: L1Wiki（下層Wiki）\ndescription: L1 層から生成された下層Wiki。来歴・審査データへの参照はここから\ndate: 2026-10-14\n---\n\n# L1Wiki（下層Wiki）\n\nこの Wiki は **L1 層**（機械抽出メイン）から生成された下層Wiki です。表示（最新）層と同じ構造（nav / claims / mysteries / references / deferrals / appearances / characters / relationships / entities / arcs / episodes）で、L1 層の来歴（run ID・facts・審査根拠）を辿る起点になります。\n\n- 下層Wiki索引（L2Wiki・L3Wiki を並列で増やします）: [下層Wiki索引](https://allusionistwiki.github.io/AllusionistWiki2/layers/)\n- 表示（最新）層: [サイトトップへ](https://allusionistwiki.github.io/AllusionistWiki2/)\n- 作業データ（facts/candidates 等の生データ）: [AllusionistWiki_work](https://github.com/allusionistwiki/AllusionistWiki_work)\n- 階層モデル（L0〜L7）: [DESIGN_NOTES](https://github.com/allusionistwiki/AllusionistWiki_obsidian/blob/main/DESIGN_NOTES.md)\n' > content/l1/_layer.md
 
@@ -82,6 +102,34 @@ jobs:
           key: w2-quartz-cache-${{ runner.os }}-${{ github.sha }}
           restore-keys: |
             w2-quartz-cache-${{ runner.os }}-
+
+      # 差分ビルド可否の判定。full に逃す条件:
+      #   - 前回落とし込み（manifest v2 / processed キャッシュ / 基準 SHA）が無い
+      #   - 前デプロイ後のサイト側コミットにエンジン/ワークフロー/生成スクリプト変更
+      #   - manifest にある .md が新 content に存在しない（削除・移動）
+      #   - 差分ページ数が多すぎる（gate の MAX_DIFF_PAGES 超）
+      - name: Decide build mode
+        id: mode
+        if: steps.flag.outputs.deploy == 'true'
+        run: |
+          mode=full
+          reason="no-diff-base"
+          if [ -f .last-manifest/manifest.json ] && [ -f .last-manifest/prev-sha.txt ] && [ -f .last-manifest/prev-site.txt ] && [ -f .quartz-cache/processed.json.gz ]; then
+            prev_site=$(cat .last-manifest/prev-site.txt)
+            git fetch -q --no-tags --depth=80 origin main
+            if ! git cat-file -e "${prev_site}^{commit}" 2>/dev/null; then
+              reason="prev-site-unknown"
+            elif git diff --name-only "${prev_site}" "${GITHUB_SHA}" | grep -qE '^(quartz/|quartz\.config\.ts|quartz\.layout\.ts|\.github/workflows/|package(-lock)?\.json|scripts/)'; then
+              reason="engine-or-workflow-changed"
+            elif python3 scripts/diff_gate.py .last-manifest/manifest.json content; then
+              mode=diff
+              reason="content-only-changes"
+            else
+              reason="deletions-or-renames"
+            fi
+          fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "build mode=$mode ($reason)"
 
       - name: Generate recent-commits page (GitHub API)
         if: steps.flag.outputs.deploy == 'true'
@@ -105,8 +153,19 @@ jobs:
         if: steps.flag.outputs.deploy == 'true' && steps.npmcache.outputs.cache-hit != 'true'
         run: npm ci
 
-      - name: Build Quartz
-        if: steps.flag.outputs.deploy == 'true'
+      # 差分ビルド: manifest v2 + processed キャッシュ（.quartz-cache 復元済み）を
+      # 基準に、変更 .md だけ LLM parse して全数 emit する（QUARTZ_DIFF パッチ）。
+      - name: Diff build (incremental LLM parse)
+        id: diffbuild
+        if: steps.flag.outputs.deploy == 'true' && steps.mode.outputs.mode == 'diff'
+        run: |
+          rm -rf public
+          QUARTZ_DIFF=1 QUARTZ_PREV_MANIFEST=.last-manifest/manifest.json npx quartz build
+
+      # フルビルド: 削除・移動・エンジン変更を含む変化、差分基盤なし、
+      # または差分ビルド失敗時のフォールバック（従来動作）。
+      - name: Full build
+        if: steps.flag.outputs.deploy == 'true' && (steps.mode.outputs.mode == 'full' || steps.diffbuild.outcome == 'failure')
         run: rm -rf public && npx quartz build
 
       - name: Save Quartz build cache
@@ -115,6 +174,23 @@ jobs:
         with:
           path: .quartz-cache
           key: w2-quartz-cache-save-${{ runner.os }}-${{ github.sha }}
+
+      # 次回の差分基盤を残す（manifest v2 + 基準 SHA 連合。processed キャッシュは
+      # 上の Save Quartz build cache で .quartz-cache ごと保存される）。
+      - name: Save last manifest
+        if: steps.flag.outputs.deploy == 'true'
+        run: |
+          mkdir -p .last-manifest
+          cp public/index.json .last-manifest/manifest.json
+          echo "${{ steps.l1.outputs.sha }}" > .last-manifest/prev-sha.txt
+          echo "${{ github.sha }}" > .last-manifest/prev-site.txt
+
+      - name: Save last manifest cache
+        if: steps.flag.outputs.deploy == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .last-manifest
+          key: w2-last-manifest-${{ runner.os }}
 
       - name: Upload artifact
         if: steps.flag.outputs.deploy == 'true'
