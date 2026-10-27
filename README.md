@@ -1,32 +1,38 @@
-# 幻想再帰のアリュージョニスト Wiki（Web公開版）
+# 幻想再帰のアリュージョニスト Wiki 2（Web公開版）
 
-[![Deploy](https://github.com/allusionistwiki/AllusionistWiki/actions/workflows/deploy.yml/badge.svg)](https://github.com/allusionistwiki/AllusionistWiki/actions)
+[![Deploy](https://github.com/allusionistwiki/AllusionistWiki2/actions/workflows/deploy.yml/badge.svg)](https://github.com/allusionistwiki/AllusionistWiki2/actions)
 
-**公開サイト: https://allusionistwiki.github.io/AllusionistWiki/**
+**公開サイト: https://allusionistwiki.github.io/AllusionistWiki2/**
 
-「ネットミームから現代思想まで引喩が散りばめたオカルトパンク」——本作の多層アナロジー（引喩・神話参照・展開の相似/相違）を典拠付きで体系化する分析WikiのWeb公開版。[Quartz](https://quartz.jzhao.xyz/) でObsidian vaultから静的サイトとしてビルドしています。
+L1〜L7 解析パイプライン（work リポジトリ）が生成する**正規化台帳・名相関索引・来歴チェーン付きの分析 Wiki** の Web 公開版です。表示（最新）層をサイト直下に、L1 下位層を `/l1/` 併存（同一構造）で配置します。[Quartz](https://quartz.jzhao.xyz/) で Obsidian vault から静的サイトとしてビルドしています。
+
+- 階層モデル・運用則: [AllusionistWiki_work](https://github.com/allusionistwiki/AllusionistWiki_work)（全層は `work/allusionist_v2/` 配下、来歴チェーン L7→L3→L2→L1→L0）
+- 下層Wiki索引: https://allusionistwiki.github.io/AllusionistWiki2/layers/
+- 初代 Wiki（v1・人間編集層）: https://allusionistwiki.github.io/AllusionistWiki/
 
 ## 構成（2リポジトリ方式）
 
 | リポジトリ | 役割 |
 |---|---|
-| [`AllusionistWiki_obsidian`](https://github.com/allusionistwiki/AllusionistWiki_obsidian) | Obsidian vault本体（ソース・オブ・トゥルース）。`wiki/` がQuartzのcontentになる |
-| `AllusionistWiki`（本リポジトリ） | Quartzプロジェクト＋GitHub Pagesデプロイ設定。vaultの内容はCIが取得してビルドする |
+| [`AllusionistLLMWiki2_Obsidian`](https://github.com/allusionistwiki/AllusionistLLMWiki2_Obsidian) | L1 解析 vault 本体（ソース・オブ・トゥルース）。`wiki/` が Quartz の content になる |
+| `AllusionistWiki2`（本リポジトリ） | Quartz プロジェクト＋GitHub Pages デプロイ設定。vault の内容は CI が取得してビルドする |
+
+> 注意: 本リポジトリの公開対象は **Wiki 2** です。初代 Wiki（`AllusionistWiki`）のソース vault は `AllusionistWiki_obsidian` であり、両者は別系統です。README 転写由来の参照混同が過去に発生したため、構成・デプロイフローは実運用（`.github/workflows/deploy.yml`）に合わせて記載します。
 
 ## デプロイフロー
 
-1. vault側（Obsidianリポジトリ）にpush → または毎時スケジュール発火
-2. CIが `AllusionistWiki_obsidian` の `wiki/` を `content/` として取得
+1. vault 側（`AllusionistLLMWiki2_Obsidian`）に push → または schedule / repository_dispatch 発火
+2. CI が `AllusionistLLMWiki2_Obsidian` の `wiki/` を `content/` として取得（同一構造のまま `/l1/` 下位層も生成）
 3. `npx quartz build` で静的サイト生成
-4. GitHub Pages にデプロイ（vaultのSHAが変わらなければスキップ）
+4. GitHub Pages にデプロイ（vault の SHA が変わらなければスキップ、デプロイは vault SHA＋サイト SHA 連合マーカー `w2-deployed-v2-` で管理）
 
-> vault側から即時再ビルドをトリガーしたい場合は、Quartzリポジトリの Actions → Deploy → Run workflow を手動実行すればよい。
+> vault 側から即時再ビルドをトリガーしたい場合は、本リポジトリの Actions → Deploy → Run workflow を手動実行する（空コミットでマーカーキーを更新する運用もあり）。
 
 ## ローカルでビルド・プレビュー
 
 ```bash
-# vault の wiki/ を content/ にコピー（またはシンボリックリンク）
-git clone https://github.com/allusionistwiki/AllusionistWiki_obsidian.git /tmp/vault
+# vault の wiki/ を content/ にコピー
+git clone --depth 1 https://github.com/allusionistwiki/AllusionistLLMWiki2_Obsidian.git /tmp/vault
 mkdir -p content && cp -r /tmp/vault/wiki/. content/
 
 npm ci
@@ -35,9 +41,10 @@ npx quartz build --serve   # http://localhost:8080 でプレビュー
 
 ## 設定
 
-- `quartz.config.ts` — タイトル・ロケール（ja-JP）・baseUrl・テーマ
+- `quartz.config.ts` — タイトル・ロケール（ja-JP）・baseUrl（`/AllusionistWiki2/`）・テーマ
 - `quartz.layout.ts` — レイアウト（検索・グラフ・backlinks・TOC）
-- `.github/workflows/deploy.yml` — GitHub Pagesデプロイ
+- `scripts/` — リンク解決パッチ（`/l1/` 二重配置での basename 曖昧化対策）等のデプロイ補助スクリプト
+- `.github/workflows/deploy.yml` — GitHub Pages デプロイ
 
 ## License
 

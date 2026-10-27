@@ -33,7 +33,7 @@ Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
 
 CC0 1.0 Universal（パブリックドメイン）
 
-Copyright (c) 2026 AllusionistWiki contributors
+Copyright (c) 2026 AllusionistWiki2 contributors
 
 全文：
 
