@@ -70,7 +70,7 @@ jobs:
 
       # 前回の manifest（public/index.json = manifest v2）と基準 SHA 群。
       # 差分ビルドの基底（processed キャッシュ）は .quartz-cache に同梱
-      # （processed.json.gz・下の Restore Quartz build cache で復元）。
+      # （processed.jsonl.gz・下の Restore Quartz build cache で復元）。
       - name: Restore last manifest (diff base)
         id: mancache
         if: steps.flag.outputs.deploy == 'true'
@@ -114,7 +114,7 @@ jobs:
         run: |
           mode=full
           reason="no-diff-base"
-          if [ -f .last-manifest/manifest.json ] && [ -f .last-manifest/prev-sha.txt ] && [ -f .last-manifest/prev-site.txt ] && [ -f .quartz-cache/processed.json.gz ]; then
+          if [ -f .last-manifest/manifest.json ] && [ -f .last-manifest/prev-sha.txt ] && [ -f .last-manifest/prev-site.txt ] && [ -f .quartz-cache/processed.jsonl.gz ]; then
             prev_site=$(cat .last-manifest/prev-site.txt)
             git fetch -q --no-tags --depth=80 origin main
             if ! git cat-file -e "${prev_site}^{commit}" 2>/dev/null; then

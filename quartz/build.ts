@@ -10,9 +10,11 @@ import { filterContent } from "./processors/filter"
 import { emitContent } from "./processors/emit"
 import cfg from "../quartz.config"
 import { FilePath, FullSlug, joinSegments, slugifyFilePath } from "./util/path"
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, writeFileSync, createReadStream, createWriteStream } from "node:fs"
 import { createHash } from "crypto"
-import { gunzipSync, gzipSync } from "node:zlib"
+import { createGzip, createGunzip } from "node:zlib"
+import { createInterface } from "node:readline"
+import rfdc from "rfdc"
 import chokidar from "chokidar"
 import { ProcessedContent } from "./plugins/vfile"
 import { Argv, BuildCtx } from "./util/ctx"
@@ -96,7 +98,7 @@ async function buildQuartz(argv: Argv, mut: Mutex, clientRefresh: () => void) {
   const filteredContent = filterContent(ctx, parsedFiles)
 
   await emitContent(ctx, filteredContent)
-  writeDiffState(ctx, filteredContent)
+  await writeDiffState(ctx, filteredContent)
   console.log(
     styleText("green", `Done processing ${markdownPaths.length} files in ${perf.timeSince()}`),
   )
@@ -140,22 +142,54 @@ async function parseIncremental(ctx: BuildCtx, filePaths: FilePath[]) {
 
   const parsedNew = await parseMarkdown(ctx, changedPaths)
 
-  const cachePath = process.env.QUARTZ_PROCESSED_CACHE ?? ".quartz-cache/processed.json.gz"
+  const cachePath = process.env.QUARTZ_PROCESSED_CACHE ?? ".quartz-cache/processed.jsonl.gz"
   if (!existsSync(cachePath)) {
     throw new Error(`diff build: processed cache missing at ${cachePath} — full build required`)
   }
-  const cached = JSON.parse(gunzipSync(readFileSync(cachePath)).toString("utf8"))
+  // processed スナップショットは JSONL（1 ページ 1 行 gzip）なのでストリームで
+  // 1 行ずつパースする（JSON.parse 単発は V8 の 512MB 文字列/バッファ上限に当たる）。
+  const cached: { pages?: any[] } = { pages: [] }
+  {
+    const rl = createInterface({
+      input: createReadStream(cachePath).pipe(createGunzip()),
+      crlfDelay: Infinity,
+    })
+    for await (const line of rl) {
+      if (line.trim() === "") continue
+      cached.pages!.push(JSON.parse(line))
+    }
+  }
+  const DATE_KEYS = ["date", "modified", "published", "created"]
   const merged: ProcessedContent[] = [...parsedNew]
   for (const e of cached.pages ?? []) {
     if (changedRels.has(e.rel)) continue
     // 未変更ページは前回の processed（frontmatter・HTML・tree 込みの data）を
     // そのまま使う — parse は二度と同じ結果になるため LLM を走らせない。
+    // JSON 往復で Date に化けた日付フィールドを復元する（contentIndex 等の
+    // toISOString 呼び出しが Date を前提にするため）。CreatedModifiedDate が
+    // 書き込む data.dates.{created,modified,published} と top-level 日付の両方。
+    for (const k of DATE_KEYS) {
+      if (typeof e.data?.[k] === "string") {
+        e.data[k] = new Date(e.data[k])
+      }
+    }
+    if (e.data?.dates) {
+      for (const k of ["created", "modified", "published"]) {
+        if (typeof e.data.dates[k] === "string") {
+          e.data.dates[k] = new Date(e.data.dates[k])
+        }
+      }
+    }
+    const clone: any = rfdc()
+    const root: any = clone(e.data.htmlAst)
+    root.type = "root"
     const vfile: any = {
       value: e.value,
       data: e.data,
       messages: [],
     }
-    merged.push([e.data.tree ?? null, vfile] as unknown as ProcessedContent)
+    vfile.data.tree = root
+    merged.push([root, vfile] as unknown as ProcessedContent)
   }
   console.log(`diff: restored=${merged.length - parsedNew.length} parsed=${parsedNew.length}`)
   return merged
@@ -165,7 +199,7 @@ async function parseIncremental(ctx: BuildCtx, filePaths: FilePath[]) {
 // 通常（フル）ビルドでも呼ばれる — 次回の差分ビルドの基準（キャッシュ）を
 // 暖める。差分モードでは parseIncremental が計算した sha マップをそのまま使う。
 // 途中失敗で書かれなくても次回の差分計算は安全（変更は再検出される）。
-function writeDiffState(ctx: BuildCtx, filteredContent: ProcessedContent[]) {
+async function writeDiffState(ctx: BuildCtx, filteredContent: ProcessedContent[]) {
   const { argv } = ctx
   if (Object.keys(DIFF_PAGES).length === 0) {
     for (const rel0 of ctx.allFiles) {
@@ -177,15 +211,24 @@ function writeDiffState(ctx: BuildCtx, filteredContent: ProcessedContent[]) {
   const manifestPath = joinSegments(argv.output, "index.json") as FilePath
   writeFileSync(manifestPath, JSON.stringify({ manifestVersion: 2, pages: DIFF_PAGES }))
 
-  const cachePath = process.env.QUARTZ_PROCESSED_CACHE ?? ".quartz-cache/processed.json.gz"
-  const pages = []
+  const cachePath = process.env.QUARTZ_PROCESSED_CACHE ?? ".quartz-cache/processed.jsonl.gz"
+  // processed スナップショットは JSONL（1 ページ 1 行）で書く。単発 JSON.stringify は
+  // 全ページの AST で V8 の文字列上限（約 512MB）を超えるためストリームで出力する。
+  mkdirSync(path.dirname(cachePath), { recursive: true })
+  const out = createWriteStream(cachePath)
+  const gz = createGzip()
+  gz.pipe(out)
   for (const content of filteredContent) {
     const vf = content[1]
-    pages.push({ rel: vf.data.relativePath, value: String(vf.value), data: vf.data })
+    gz.write(JSON.stringify({ rel: vf.data.relativePath, value: String(vf.value), data: vf.data }) + "\n")
   }
-  mkdirSync(path.dirname(cachePath), { recursive: true })
-  writeFileSync(cachePath, gzipSync(Buffer.from(JSON.stringify({ pages: pages }))))
-  console.log(`diff: state written pages=${pages.length}`)
+  await new Promise<void>((resolve, reject) => {
+    gz.on("error", reject)
+    out.on("error", reject)
+    out.on("finish", resolve)
+    gz.end()
+  })
+  console.log(`diff: state written pages=${filteredContent.length}`)
 }
 
 // setup watcher for rebuilds
