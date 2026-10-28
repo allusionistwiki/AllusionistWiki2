@@ -173,6 +173,19 @@ async function setupExplorer(currentSlug: FullSlug) {
     const entries = [...Object.entries(data)] as [FullSlug, ContentDetails][]
     const trie = FileTrieNode.fromEntries(entries)
 
+    // Wiki section scoping (2026-10-28): a page under a top section (l1/l2/layers)
+    // gets the sidebar of *that* wiki — the tree root becomes the section node, so
+    // the Explorer shows only the current wiki's structure. Top-level (display
+    // layer) pages keep the full tree.
+    const SECTIONS = ["l1", "l2", "layers"]
+    const sectionRoot = (currentSlug.split("/")[0] ?? "").toLowerCase()
+    if (SECTIONS.includes(sectionRoot)) {
+      const subs = trie.children.filter((c) => c.slugSegment.toLowerCase() === sectionRoot)
+      if (subs.length >= 1) {
+        trie.children = subs
+      }
+    }
+
     // Apply functions in order
     for (const fn of opts.order) {
       switch (fn) {
