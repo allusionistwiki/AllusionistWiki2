@@ -12,7 +12,9 @@ import { pathToFileURL } from "node:url"
 import { transformSync } from "esbuild"
 
 import { fileURLToPath } from "node:url"
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
+const ROOT = process.env.QUARTZ_PATCH_ROOT
+  ? path.resolve(process.env.QUARTZ_PATCH_ROOT)
+  : path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const TARGETS = [
   ["build-diff-build.patch.mjs", "quartz/build.ts"],
 ]
