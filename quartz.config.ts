@@ -83,9 +83,9 @@ const config: QuartzConfig = {
       Plugin.ContentIndex({
         enableSiteMap: true,
         enableRSS: true,
-        // /l1/ 二重配置を contentIndex・sitemap・RSS から除外:
-        // 全ページロード時に fetch される contentIndex.json が 39MB 化しフリーズした
-        excludePrefixes: ["l1/"],
+        // 層セクション（L1/L2/layers）の生成物索引・大量の鏡像ページを
+        // contentIndex・sitemap・RSS から除外（全ページ load で 39MB 化を回避）。
+        excludePrefixes: ["L1/", "L2/", "layers/"],
         excerptChars: 200,
       }),
       Plugin.RecentUpdatesPage({ limit: 1000 }),

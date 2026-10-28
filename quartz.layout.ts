@@ -3,10 +3,10 @@ import * as Component from "./quartz/components"
 import CreatedModifiedMeta from "./quartz/components/CreatedModifiedMeta"
 import { FileTrieNode } from "./quartz/util/fileTrie"
 
-// 下位Wiki索引の除外: /l1/ はトップ（表示層）と同内容の複製サブツリーのため
-// サイドバー Explorer には出さず、索引は入口ページ下部の節が担う。
+// 層セクション構成（/L1/ /L2/ /layers/）: 全サブツリーをサイドバーに表示する
+// （セクション内では explorer.inline.ts の section scoping で当該セクションのみになる）。
 const explorerOptions = {
-  filterFn: (node: FileTrieNode) => node.slugSegment !== "tags" && node.slugSegment !== "l1",
+  filterFn: (node: FileTrieNode) => node.slugSegment !== "tags",
 }
 
 // components shared across all pages
