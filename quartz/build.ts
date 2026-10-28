@@ -140,15 +140,13 @@ async function parseIncremental(ctx: BuildCtx, filePaths: FilePath[]) {
   }
   console.log(`diff: pages=${filePaths.length} llm-parse=${changedPaths.length}`)
 
-  const parsedNew = await parseMarkdown(ctx, changedPaths)
-
   const cachePath = process.env.QUARTZ_PROCESSED_CACHE ?? ".quartz-cache/processed.jsonl.gz"
   if (!existsSync(cachePath)) {
     throw new Error(`diff build: processed cache missing at ${cachePath} — full build required`)
   }
   // processed スナップショットは JSONL（1 ページ 1 行 gzip）なのでストリームで
-  // 1 行ずつパースする（JSON.parse 単発は V8 の 512MB 文字列/バッファ上限に当たる）。
-  const cached: { pages?: any[] } = { pages: [] }
+  // 1 行ずつ読む（JSON.parse 単発は V8 の 512MB 文字列/バッファ上限に当たる）。
+  const cacheLines: string[] = []
   {
     const rl = createInterface({
       input: createReadStream(cachePath).pipe(createGunzip()),
@@ -156,9 +154,29 @@ async function parseIncremental(ctx: BuildCtx, filePaths: FilePath[]) {
     })
     for await (const line of rl) {
       if (line.trim() === "") continue
-      cached.pages!.push(JSON.parse(line))
+      cacheLines.push(line)
     }
   }
+  // キャッシュが未変更全数をカバーしない（古い・部分的）なら差分ビルドの
+  // 利点がないので full parse へ完全退避する（restored+parsed >= pages を保証）。
+  if (cacheLines.length < filePaths.length - changedPaths.length) {
+    console.log(
+      styleText(
+        "yellow",
+        `diff: processed cache covers ${cacheLines.length} < ${filePaths.length - changedPaths.length} unchanged pages — falling back to full parse`,
+      ),
+    )
+    const parsedAll = await parseMarkdown(ctx, filePaths)
+    for (const fp of filePaths) {
+      DIFF_PAGES[relOf(ctx, fp)] = createHash("sha256").update(readFileSync(fp)).digest("hex")
+    }
+    return parsedAll
+  }
+  const cached: { pages?: any[] } = { pages: [] }
+  for (const line of cacheLines) {
+    cached.pages!.push(JSON.parse(line))
+  }
+  const parsedNew = await parseMarkdown(ctx, changedPaths)
   const DATE_KEYS = ["date", "modified", "published", "created"]
   const merged: ProcessedContent[] = [...parsedNew]
   for (const e of cached.pages ?? []) {

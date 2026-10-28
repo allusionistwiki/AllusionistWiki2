@@ -26,10 +26,10 @@ for (const [patchFile, target] of TARGETS) {
   if (out !== src) {
     transformSync(out, { loader: "ts", tsconfigRaw: "{}" })
     writeFileSync(targetPath, out)
-    console.log(`patched ${target}`)
+    console.log(`patched ${target} via ${patchFile}`)
     changed++
   } else {
-    console.log(`already patched: ${target}`)
+    console.log(`already patched: ${target} via ${patchFile}`)
   }
 }
 console.log(`APPLY-QUARTZ-PATCHES done changed=${changed}`)
