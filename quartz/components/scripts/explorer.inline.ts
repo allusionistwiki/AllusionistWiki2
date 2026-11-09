@@ -276,7 +276,9 @@ document.addEventListener("prenav", async () => {
 })
 
 document.addEventListener("nav", async (e: CustomEventMap["nav"]) => {
-  const currentSlug = e.detail.url
+  // directory URL（/ を末尾に持つ）は index.html 相当として扱う（phase-2: セクション直下ディレクトリ URL の相対解決対策）
+  const rawUrl = e.detail.url as string
+  const currentSlug = (rawUrl.endsWith("/") ? rawUrl + "index.html" : rawUrl) as FullSlug
   await setupExplorer(currentSlug)
 
   // if mobile hamburger is visible, collapse by default
