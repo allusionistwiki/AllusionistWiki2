@@ -6,7 +6,18 @@ import { FileTrieNode } from "./quartz/util/fileTrie"
 // 層セクション構成（/L1/ /L2/ /layers/）: 全サブツリーをサイドバーに表示する
 // （セクション内では explorer.inline.ts の section scoping で当該セクションのみになる）。
 const explorerOptions = {
+  // モバイル（iOS）対策: 初期は畳み、タップ開封時の 1 展開も最上位節のみで
+  // 数千ノードの DOM 生成を防止（開封は toggleAll で全展開可）。
+  folderDefaultState: "collapsed" as const,
+  folderClickBehavior: "collapse" as const,
   filterFn: (node: FileTrieNode) => node.slugSegment !== "tags",
+  mapFn: (node: FileTrieNode) => {
+    if (node.children.length > 40) {
+      node.collapsed = true
+      node.children = []
+    }
+    return node
+  },
 }
 
 // components shared across all pages
