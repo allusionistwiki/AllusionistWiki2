@@ -181,7 +181,7 @@ jobs:
         run: |
           mkdir -p .last-manifest
           cp public/index.json .last-manifest/manifest.json
-          echo "${{ steps.l1.outputs.sha }}" > .last-manifest/prev-sha.txt
+          echo "$(git ls-remote https://github.com/allusionistwiki/AllusionistLLMWiki2_Obsidian.git main | cut -f1)" > .last-manifest/prev-sha.txt
           echo "${{ github.sha }}" > .last-manifest/prev-site.txt
 
       - name: Save last manifest cache
