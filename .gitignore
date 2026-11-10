@@ -10,4 +10,4 @@ private/
 replit.nix
 
 # content は CI が vault リポジトリから取得（ローカルは手動コピー）
-
+content/
