@@ -89,7 +89,9 @@ jobs:
           rm -rf content
           mkdir -p content content/L1 content/L2 content/layers
           cp -r /tmp/vault/wiki/l1/. content/L1/
-          cp -r /tmp/vault/wiki/l2/. content/L2/
+          mkdir -p content/L2/nav
+          cp -r /tmp/vault/wiki/l2/. content/L2/nav/
+          cp /tmp/vault/wiki/l2/index.md content/L2/index.md
           cp -r /tmp/vault/wiki/layers/. content/layers/
           cp /tmp/vault/wiki/index.md content/index.md
 
