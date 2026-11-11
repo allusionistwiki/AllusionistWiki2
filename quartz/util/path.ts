@@ -259,6 +259,7 @@ export function transformLink(src: FullSlug, target: string, opts: TransformOpti
       srcDirSegs.length > 0 && ["l1", "l2"].includes(srcDirSegs[0].toLowerCase())
         ? srcDirSegs[0]
         : ""
+    const canonicalNoSlash = canonicalSlug.replace(/\/+$/, "")
     const roots: string[] = []
     const pushRoot = (r: string) => {
       if (r !== "" && !roots.includes(r)) roots.push(r)
@@ -267,13 +268,34 @@ export function transformLink(src: FullSlug, target: string, opts: TransformOpti
       pushRoot(baseDir)
     }
     pushRoot(layerRoot)
-    pushRoot("")
-    const canonicalNoSlash = canonicalSlug.replace(/\/+$/, "")
+    // ルートページ（src にディレクトリがない）も含め、サイト直下結合を常に試みる
+    roots.push("")
+    const spellingsOf = (joined: string): string[] => {
+      const res = [joined]
+      const m = joined.match(/^(l1|l2)(\/)/i)
+      if (m) {
+        res.push(m[1].toUpperCase() + joined.slice(2))
+        res.push(m[1].toUpperCase() + joined)
+      }
+      const mm = joined.match(/^(L1|L2)\//)
+      if (mm) {
+        // 層プレフィックス付き綴りはサイトルート直下（/L1/ /L2/）を指す表記でもある
+        res.push(joined.slice(3))
+      }
+      // どの結合からも、最終フォールバックとしてサイト直下 spelling（canonical
+      // そのまま・層プレフィックス付きは大文字変形込み）を必ず試みる。
+      // （L2 層 top の wikilink entities/… はサイト直下 L2/entities/… を指す）
+      res.push(canonicalNoSlash)
+      const cm = canonicalNoSlash.match(/^(l1|l2)(\/)/i)
+      if (cm) {
+        res.push(cm[1].toUpperCase() + canonicalNoSlash.slice(2))
+      }
+      return [...new Set(res)]
+    }
     const strictCandidates: string[] = []
     outer: for (const r of roots) {
       const joined = r === "" ? canonicalNoSlash : `${r}/${canonicalNoSlash}`
-      const spellings = [joined, joined.replace(/^(l1|l2)\//, (m) => m.toUpperCase())]
-      for (const v of [...new Set(spellings)]) {
+      for (const v of spellingsOf(joined)) {
         for (const c of [`${v}.md`, `${v}/index.md`, v]) {
           if (opts.allSlugs.includes(c as FullSlug)) {
             strictCandidates.push(c.replace(/\.md$/, ""))
