@@ -226,3 +226,5 @@ jobs:
           key: w2-deployed-v2-${{ needs.build.outputs.l1_sha }}-${{ github.sha }}
 
 # L2 層は flat 配置（/L2/<section>/）。nav ラッパー廃止 2026-11-11
+
+# trigger: full rebuild（flat L2 反映・cache 基準更新 2026-11-11）
