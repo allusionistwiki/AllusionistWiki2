@@ -240,6 +240,57 @@ export function transformLink(src: FullSlug, target: string, opts: TransformOpti
     const canonicalSlug = targetCanonical.replace(/^(\.\.?\/)+/, "")
     targetCanonical = canonicalSlug
 
+    // 層相対リンクの厳密解決（L1/L2 flat 配置対応）:
+    // - 無プレフィックスのリンクは src のディレクトリから結合（各層 index.md の
+    //   層内相対表記 → /L1/<section>/ 等）
+    // - "../" 前置きは src 側を pop して解決。全部 pop した（＝層ルート相対の
+    //   表記）場合は src が属する層のルート（→ /L1/ /L2/ 直下）を優先し、
+    //   見つからなければサイト直下（layers/ 等）へ。
+    // - l1/ l2/ 始まりの綴りは大文字変形（L1/ L2/）も試みる（サイト側の層
+    //   ディレクトリは大文字、URL は case-sensitive）。
+    // 結合物が allSlugs（.md / index.md のいずれか）に実在すれば採用し、
+    // 発行は folder 系リンク（index.md 含む）は末尾スラッシュ付き。
+    // 実在しないものは従来の shortest/absolute フォールバックへ。
+    const relPrefix = (canonicalSlugRaw.match(/^(?:\.\.\/)+/) ?? [""])[0]
+    const upCount = relPrefix.length > 0 ? relPrefix.split("/").length - 1 : 0
+    const srcDirSegs = src.split("/").slice(0, -1)
+    const baseDir = srcDirSegs.slice(0, Math.max(0, srcDirSegs.length - upCount)).join("/")
+    const layerRoot =
+      srcDirSegs.length > 0 && ["l1", "l2"].includes(srcDirSegs[0].toLowerCase())
+        ? srcDirSegs[0]
+        : ""
+    const roots: string[] = []
+    const pushRoot = (r: string) => {
+      if (r !== "" && !roots.includes(r)) roots.push(r)
+    }
+    if (baseDir !== "") {
+      pushRoot(baseDir)
+    }
+    pushRoot(layerRoot)
+    pushRoot("")
+    const canonicalNoSlash = canonicalSlug.replace(/\/+$/, "")
+    const strictCandidates: string[] = []
+    outer: for (const r of roots) {
+      const joined = r === "" ? canonicalNoSlash : `${r}/${canonicalNoSlash}`
+      const spellings = [joined, joined.replace(/^(l1|l2)\//, (m) => m.toUpperCase())]
+      for (const v of [...new Set(spellings)]) {
+        for (const c of [`${v}.md`, `${v}/index.md`, v]) {
+          if (opts.allSlugs.includes(c as FullSlug)) {
+            strictCandidates.push(c.replace(/\.md$/, ""))
+            break outer
+          }
+        }
+      }
+    }
+    if (strictCandidates.length >= 1) {
+      const simple = simplifySlug(strictCandidates[0] as FullSlug)
+      let href = resolveRelative(src, simple as unknown as FullSlug)
+      if (folderTail) {
+        href = joinSegments(href, "/") as RelativeURL
+      }
+      return (href + targetAnchor) as RelativeURL
+    }
+
     if (opts.strategy === "shortest") {
       // if the file name is unique, then it's just the filename
       const matchingFileNames = opts.allSlugs.filter((slug) => {
