@@ -8,8 +8,10 @@ content/recent-commits.md を生成する。CI（deploy.yml）でビルド前に
 - 日時は JST に変換
 """
 import json
+import os
 import sys
 import urllib.request
+import urllib.error
 import datetime
 
 REPO = "allusionistwiki/AllusionistLLMWiki2_Obsidian"
@@ -25,12 +27,30 @@ def esc(s: str) -> str:
 
 def main():
     url = f"https://api.github.com/repos/{REPO}/commits?per_page={LIMIT}"
-    req = urllib.request.Request(
-        url,
-        headers={"Accept": "application/vnd.github+json", "User-Agent": "quartz-ci"},
-    )
-    with urllib.request.urlopen(req, timeout=30) as r:
-        commits = json.load(r)
+    tok = os.environ.get("GH_TOKEN", "")
+    # 公開API 60回/時は共有IP（Actions runner）で枯渇し得る。CI はリトライ専用で
+    # 失敗させない（レート制限 403/429 と一時的転送 5xx）。
+    last_err: Exception | None = None
+    commits = None
+    for attempt in range(6):
+        headers = {"Accept": "application/vnd.github+json", "User-Agent": "quartz-ci"}
+        if tok:
+            headers["Authorization"] = f"Bearer {tok}"
+        req = urllib.request.Request(url, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                commits = json.load(r)
+            break
+        except urllib.error.HTTPError as e:
+            last_err = e
+            if e.code in (403, 429, 500, 502, 503, 504):
+                sys.stderr.write(f"github api {e.code}, retry {attempt + 1} in {2 ** attempt * 15}s\n")
+                import time
+                time.sleep(2 ** attempt * 15)
+                continue
+            raise
+    else:
+        raise last_err
 
     lines = [
         "---",
