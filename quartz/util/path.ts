@@ -304,6 +304,31 @@ export function transformLink(src: FullSlug, target: string, opts: TransformOpti
         }
       }
     }
+    if (strictCandidates.length === 0) {
+      // basename 一致（wikilink の素名表記 [[E_char_うずめ]] 等）: 同一 basename が
+      // L1/L2 両層に存在するため、src の層内の候補を優先して採用する
+      // （L1 ページ→L1/entities/…、L2 ページ→L2/entities/…）。層内に無い場合は
+      // 他層・ルート含め全文一致（unique）のみ採用。
+      const bn = canonicalNoSlash.split("/").at(-1) ?? ""
+      if (bn.length > 0) {
+        const suff = opts.allSlugs.filter((slug) => {
+          const last = slug.split("/").at(-1) ?? ""
+          return last === `${bn}.md` || last === bn
+        })
+        if (suff.length >= 1) {
+          const layerPrefixLower = layerRoot.toLowerCase()
+          const preferred =
+            layerPrefixLower.length > 0
+              ? suff.filter((slug) => slug.toLowerCase().startsWith(`${layerPrefixLower}/`))
+              : []
+          if (preferred.length >= 1) {
+            strictCandidates.push(preferred[0].replace(/\.md$/, ""))
+          } else if (suff.length === 1) {
+            strictCandidates.push(suff[0].replace(/\.md$/, ""))
+          }
+        }
+      }
+    }
     if (strictCandidates.length >= 1) {
       const simple = simplifySlug(strictCandidates[0] as FullSlug)
       let href = resolveRelative(src, simple as unknown as FullSlug)
