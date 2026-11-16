@@ -133,6 +133,8 @@ jobs:
 
       - name: Generate recent-commits page (GitHub API)
         if: steps.flag.outputs.deploy == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           python3 scripts/fetch_recent_commits.py 100
 
