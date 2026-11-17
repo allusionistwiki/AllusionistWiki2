@@ -143,12 +143,6 @@ jobs:
         with:
           node-version: 22
 
-      # ビルド前にエンジン patch を必ず適用する（未適用 commit を CI に置けないため
-      # 冪等 apply のみ。apply 漏れはエンジン変更 = full 判定で cache 側は安全）。
-      - name: Apply Quartz engine patches
-        if: steps.flag.outputs.deploy == 'true'
-        run: node scripts/apply-quartz-patches.mjs
-
       - name: Restore node_modules cache
         if: steps.flag.outputs.deploy == 'true'
         id: npmcache
@@ -160,6 +154,12 @@ jobs:
       - name: Install Dependencies
         if: steps.flag.outputs.deploy == 'true' && steps.npmcache.outputs.cache-hit != 'true'
         run: npm ci
+
+      # ビルド前にエンジン patch を必ず適用する（冪等 apply。node/esbuild 必要なので
+      # 依存導入後。apply 漏れはエンジン変更 = full 判定で cache 側は安全）。
+      - name: Apply Quartz engine patches
+        if: steps.flag.outputs.deploy == 'true'
+        run: node scripts/apply-quartz-patches.mjs
 
       # 差分ビルド: manifest v2 + processed キャッシュ（.quartz-cache 復元済み）を
       # 基準に、変更 .md だけ LLM parse して全数 emit する（QUARTZ_DIFF パッチ）。
