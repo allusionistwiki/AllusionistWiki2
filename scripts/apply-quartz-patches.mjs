@@ -17,6 +17,7 @@ const ROOT = process.env.QUARTZ_PATCH_ROOT
   : path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const TARGETS = [
   ["build-diff-build.patch.mjs", "quartz/build.ts"],
+  ["links-internalize-site-urls.patch.mjs", "quartz/plugins/transformers/links.ts"],
 ]
 
 let changed = 0
