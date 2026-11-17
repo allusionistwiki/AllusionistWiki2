@@ -99,6 +99,16 @@ export const CrawlLinks: QuartzTransformerPlugin<Partial<Options>> = (userOpts) 
                 }
 
                 // don't process external links or intra-document anchors
+                // 内部化: この site (AllusionistWiki2) 配下の絶対 URL を
+                // vault ルート相対 slug へ書き換えて内部解決させる（層導線規約）。
+                const internalized = dest.replace(
+                  /^https?:\/\/allusionistwiki\.github\.io\/AllusionistWiki2\/(.+)$/,
+                  (_m, p1) => p1,
+                )
+                if (internalized !== dest) {
+                  node.properties.href = internalized
+                  dest = internalized
+                }
                 const isInternal = !(isAbsoluteUrl(dest) || dest.startsWith("#"))
                 if (isInternal) {
                   dest = node.properties.href = transformLink(
